@@ -1,1 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Audio Transcription</title>
+  <style>
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 50px;
+    }
+    #transcript {
+      border: 1px solid black;
+      padding: 10px;
+      width: 669px;
+      height: 207px;
+      overflow: auto;
+      resize: both;
+      display: flex;
+      flex-direction: column;
+    }
+    .translation-entry {
+      margin-top: 10px;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Real-Time Audio Transcription</h1>
+    <div id="transcript"></div>
+    <button id="startStopButton">Start Transcription</button>
+  </div>
 
+  <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+  <script>
+    const startStopButton = document.getElementById('startStopButton');
+    const transcriptDiv = document.getElementById('transcript');
+    let isTranscribing = false;
+    let recognizer;
+    const subscriptionKey = '069fe2e4cb704b54b1e49ff97a5115ed';
+    const serviceRegion = 'japaneast';
+    const language = 'zh-CN'; // Chinese Simplified
+    const googleTranslateAPIKey = 'AIzaSyCpORZref4C-4KaqHG8zP2fmpegtjUXImk';
+    let interimTranslationEntry;
+
+    function startRecognition() {
+      try {
+        const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionKey, serviceRegion);
+        speechConfig.speechRecognitionLanguage = language;
+        const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+
+        // Ensure recognizer is properly initialized each time
+        recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+
+        recognizer.recognizing = (s, e) => {
+          const interimText = e.result.text;
+          console.log(`Interim result: ${interimText}`);
+          translateText(interimText, true);
+        };
+
+        recognizer.recognized = (s, e) => {
+          if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+            const finalText = e.result.text;
+            console.log(`Final result: ${finalText}`);
+            translateText(finalText, false);
+          } else if (e.result.reason === SpeechSDK.ResultReason.NoMatch) {
+            console.log("No speech could be recognized.");
+          }
+        };
+
+        recognizer.canceled = (s, e) => {
+          console.error(`Recognition canceled: ${e.reason}`);
+          if (e.reason === SpeechSDK.CancellationReason.Error) {
+            console.error(`Error details: ${e.errorDetails}`);
+          }
+          recognizer.stopContinuousRecognitionAsync();
+        };
+
+        recognizer.sessionStopped = (s, e) => {
+          console.log("Session stopped.");
+          recognizer.stopContinuousRecognitionAsync();
+        };
+
+        // Start microphone recognition
+        recognizer.startContinuousRecognitionAsync(
+          () => console.log("Recognition started successfully."),
+          (err) => {
+            console.error("Error starting recognition: ", err);
+            alert("Microphone access is needed for transcription. Please enable it in your browser settings.");
+          }
+        );
+      } catch (error) {
+        console.error("Error initializing recognition: ", error);
+      }
+    }
+
+    function stopRecognition() {
+      if (recognizer) {
+        recognizer.stopContinuousRecognitionAsync(() => {
+          console.log("Recognition stopped.");
+        });
+      }
+    }
+
+    function translateText(text, isInterim) {
+      fetch(`https://translation.googleapis.com/language/translate/v2?key=${googleTranslateAPIKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          q: text,
+          source: 'zh-CN',
+          target: 'en',
+          format: 'text'
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        const translation = data.data.translations[0].translatedText;
+        
+        if (isInterim) {
+          if (!interimTranslationEntry) {
+            interimTranslationEntry = document.createElement("div");
+            interimTranslationEntry.className = "translation-entry";
+            transcriptDiv.appendChild(interimTranslationEntry);
+          }
+          interimTranslationEntry.textContent = translation;
+        } else {
+          if (interimTranslationEntry) {
+            interimTranslationEntry.textContent = translation;
+            interimTranslationEntry = null;
+          } else {
+            const finalTranslationEntry = document.createElement("div");
+            finalTranslationEntry.className = "translation-entry";
+            finalTranslationEntry.textContent = translation;
+            transcriptDiv.appendChild(finalTranslationEntry);
+          }
+          transcriptDiv.appendChild(document.createElement("br"));
+        }
+        transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+      })
+      .catch(error => console.error('Error translating text:', error));
+    }
+
+    startStopButton.addEventListener('click', () => {
+      if (isTranscribing) {
+        stopRecognition();
+        startStopButton.textContent = 'Start Transcription';
+      } else {
+        startRecognition();
+        startStopButton.textContent = 'Stop Transcription';
+      }
+      isTranscribing = !isTranscribing;
+    });
+  </script>
+</body>
+</html>
